@@ -1,6 +1,6 @@
 [project]
 name = "mcp-smart-searcher"
-version = "0.2.1"
+version = "0.2.2"
 description = "A smart MCP server for multi-engine web search with AI-powered results"
 readme = "README.md"
 requires-python = ">=3.10"
