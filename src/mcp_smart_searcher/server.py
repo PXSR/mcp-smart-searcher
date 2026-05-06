@@ -28,7 +28,6 @@ mcp = FastMCP("smart-searcher")
 # Configuration from environment variables
 DEFAULT_SEARCH_ENGINE = os.getenv("DEFAULT_SEARCH_ENGINE", "bing")
 ALLOWED_SEARCH_ENGINES = os.getenv("ALLOWED_SEARCH_ENGINES", "").split(",") if os.getenv("ALLOWED_SEARCH_ENGINES") else None
-BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 USE_PROXY = os.getenv("USE_PROXY", "false").lower() == "true"
@@ -45,7 +44,7 @@ _search_semaphore = asyncio.Semaphore(MAX_CONCURRENT_SEARCH)
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 # Supported search engines
-ALL_ENGINES = ["bing", "duckduckgo", "brave", "baidu", "juejin", "github", "github_code", "tavily"]
+ALL_ENGINES = ["bing", "duckduckgo", "baidu", "juejin", "github", "github_code", "tavily"]
 
 
 def get_proxy_config(engine: str = None) -> dict:
@@ -198,42 +197,6 @@ async def search_duckduckgo(query: str, limit: int) -> list[dict]:
             except Exception as e:
                 logger.error("DuckDuckGo search failed: %s", str(e), exc_info=True)
                 results.append({"error": f"DuckDuckGo search failed: {str(e)}", "engine": "duckduckgo"})
-        return results
-
-
-async def search_brave(query: str, limit: int) -> list[dict]:
-    """Search using Brave Search API."""
-    if not BRAVE_API_KEY:
-        logger.warning("Brave search skipped: BRAVE_API_KEY not configured")
-        return [{"error": "Brave API key not configured", "engine": "brave"}]
-
-    async with _search_semaphore:
-        results = []
-        logger.info("Brave search: query=%r limit=%d", query, limit)
-        async with httpx.AsyncClient(**get_proxy_config("brave")) as client:
-            try:
-                url = "https://api.search.brave.com/res/v1/web/search"
-                headers = {
-                    "Accept": "application/json",
-                    "X-Subscription-Token": BRAVE_API_KEY
-                }
-                params = {"q": query, "count": limit}
-
-                response = await client.get(url, headers=headers, params=params, timeout=30.0)
-                response.raise_for_status()
-                data = response.json()
-
-                for item in data.get("web", {}).get("results", [])[:limit]:
-                    results.append({
-                        "title": item.get("title", ""),
-                        "url": item.get("url", ""),
-                        "snippet": item.get("description", ""),
-                        "engine": "brave"
-                    })
-                logger.info("Brave returned %d results", len(results))
-            except Exception as e:
-                logger.error("Brave search failed: %s", str(e), exc_info=True)
-                results.append({"error": f"Brave search failed: {str(e)}", "engine": "brave"})
         return results
 
 
@@ -423,7 +386,6 @@ async def search_tavily(query: str, limit: int) -> list[dict]:
 SEARCH_ENGINES = {
     "bing": search_bing,
     "duckduckgo": search_duckduckgo,
-    "brave": search_brave,
     "baidu": search_baidu,
     "juejin": search_juejin,
     "github": search_github,
@@ -439,7 +401,7 @@ async def web_search(query: str, engines: list[str] = None, limit: int = 10) -> 
 
     Args:
         query: Search query string (non-empty)
-        engines: Search engines to use (bing, duckduckgo, brave, baidu, juejin, github, github_code, tavily)
+        engines: Search engines to use (bing, duckduckgo, baidu, juejin, github, github_code, tavily)
         limit: Maximum number of results per engine (1-50, default 10)
 
     Returns:

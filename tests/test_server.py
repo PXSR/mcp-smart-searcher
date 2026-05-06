@@ -14,7 +14,6 @@ from mcp_smart_searcher.server import (
     is_engine_allowed,
     search_baidu,
     search_bing,
-    search_brave,
     search_duckduckgo,
     search_github,
     search_github_code,
@@ -249,30 +248,6 @@ class TestSearchBaidu:
 
 
 # ---------------------------------------------------------------------------
-# Tests: search_brave
-# ---------------------------------------------------------------------------
-
-class TestSearchBrave:
-    @pytest.mark.asyncio
-    async def test_no_api_key(self):
-        with patch("mcp_smart_searcher.server.BRAVE_API_KEY", ""):
-            results = await search_brave("test", 5)
-        assert len(results) == 1
-        assert "error" in results[0]
-
-    @pytest.mark.asyncio
-    async def test_returns_results(self):
-        json_data = {"web": {"results": [{"title": "Brave Result", "url": "https://brave.com", "description": "Brave snippet"}]}}
-        mock_client = make_mock_client("{}", json_data=json_data)
-        with patch("mcp_smart_searcher.server.BRAVE_API_KEY", "test-key"), \
-             patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
-            results = await search_brave("test", 5)
-        assert len(results) == 1
-        assert results[0]["title"] == "Brave Result"
-        assert results[0]["engine"] == "brave"
-
-
-# ---------------------------------------------------------------------------
 # Tests: search_juejin
 # ---------------------------------------------------------------------------
 
@@ -394,12 +369,12 @@ class TestWebSearch:
 
     @pytest.mark.asyncio
     async def test_error_formatting(self):
-        mock_results = [{"error": "API key missing", "engine": "brave"}]
-        mock_brave = AsyncMock(return_value=mock_results)
-        with patch.dict("mcp_smart_searcher.server.SEARCH_ENGINES", {"brave": mock_brave}, clear=False):
+        mock_results = [{"error": "Simulated failure", "engine": "duckduckgo"}]
+        mock_ddg = AsyncMock(return_value=mock_results)
+        with patch.dict("mcp_smart_searcher.server.SEARCH_ENGINES", {"duckduckgo": mock_ddg}, clear=False):
             with patch("mcp_smart_searcher.server.ALLOWED_SEARCH_ENGINES", None):
-                result = await web_search("test", engines=["brave"])
-        assert "[brave] Error: API key missing" in result
+                result = await web_search("test", engines=["duckduckgo"])
+        assert "[duckduckgo] Error: Simulated failure" in result
 
 
 # ---------------------------------------------------------------------------
