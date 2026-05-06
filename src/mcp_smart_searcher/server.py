@@ -31,7 +31,7 @@ ALLOWED_SEARCH_ENGINES = os.getenv("ALLOWED_SEARCH_ENGINES", "").split(",") if o
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 USE_PROXY = os.getenv("USE_PROXY", "true").lower() == "true"
-PROXY_URL = os.getenv("PROXY_URL", "http://127.0.0.1:7890")
+PROXY_URL = os.getenv("PROXY_URL", "http://127.0.0.1:10809")
 # Comma-separated list of engines that should use proxy. Empty means ALL engines use proxy (legacy behavior).
 PROXY_ENGINES = [e.strip() for e in os.getenv("PROXY_ENGINES", "").split(",") if e.strip()] if os.getenv("PROXY_ENGINES") else None
 
@@ -47,8 +47,15 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 ALL_ENGINES = ["duckduckgo", "baidu", "juejin", "github", "github_code", "tavily"]
 
 
+# Engines that should NOT use proxy by default (domestic engines)
+NO_PROXY_ENGINES = {"baidu", "juejin"}
+
+
 def get_proxy_config(engine: str = None) -> dict:
     """Get proxy configuration for a specific engine.
+
+    Domestic engines (baidu, juejin) skip proxy by default.
+    All other engines use proxy when USE_PROXY is true.
 
     Args:
         engine: The search engine name. If None, returns global proxy config.
@@ -58,12 +65,14 @@ def get_proxy_config(engine: str = None) -> dict:
     """
     if not USE_PROXY:
         return {}
-    # If PROXY_ENGINES is set, only those engines use proxy
+    # If PROXY_ENGINES is explicitly set, only those engines use proxy
     if PROXY_ENGINES is not None:
         if engine in PROXY_ENGINES:
             return {"proxy": PROXY_URL}
         return {}
-    # Legacy behavior: no PROXY_ENGINES means ALL engines use proxy
+    # Default: skip proxy for domestic engines
+    if engine in NO_PROXY_ENGINES:
+        return {}
     return {"proxy": PROXY_URL}
 
 

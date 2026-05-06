@@ -61,8 +61,8 @@ python -m build
 | `TAVILY_API_KEY` | Tavily AI Search API key | (none) |
 | `GITHUB_TOKEN` | GitHub API token | (none) |
 | `USE_PROXY` | Enable proxy | `true` |
-| `PROXY_URL` | Proxy URL | `http://127.0.0.1:7890` |
-| `PROXY_ENGINES` | Comma-separated engines using proxy | (all) |
+| `PROXY_URL` | Proxy URL | `http://127.0.0.1:10809` |
+| `PROXY_ENGINES` | Comma-separated engines using proxy | (auto: domestic engines excluded) |
 | `MAX_CONCURRENT_SEARCH` | Max concurrent search requests | `5` |
 | `LOG_LEVEL` | Logging level | `INFO` |
 
