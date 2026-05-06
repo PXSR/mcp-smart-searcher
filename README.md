@@ -31,8 +31,8 @@ mcp-smart-searcher
 # Or via Python module
 python -m mcp_smart_searcher
 
-# Or via npx (no install required)
-npx -y mcp-smart-searcher
+# Or via uvx (no install required)
+uvx mcp-smart-searcher
 ```
 
 ### MCP client configuration
@@ -49,14 +49,14 @@ Add to your MCP client config (e.g., Claude Desktop):
 }
 ```
 
-Or with `npx`:
+Or with `uvx` (no install required):
 
 ```json
 {
   "mcpServers": {
     "smart-searcher": {
-      "command": "npx",
-      "args": ["-y", "mcp-smart-searcher"]
+      "command": "uvx",
+      "args": ["mcp-smart-searcher"]
     }
   }
 }
@@ -121,14 +121,14 @@ USE_PROXY=false
 }
 ```
 
-Or with `npx`:
+Or with `uvx` (no install required):
 
 ```json
 {
   "mcpServers": {
     "smart-searcher": {
-      "command": "npx",
-      "args": ["-y", "mcp-smart-searcher"],
+      "command": "uvx",
+      "args": ["mcp-smart-searcher"],
       "env": {
         "TAVILY_API_KEY": "tvly-xxx",
         "GITHUB_TOKEN": "ghp_xxx"
