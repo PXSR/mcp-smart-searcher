@@ -16,16 +16,15 @@ Single-module Python package under `src/mcp_smart_searcher/`:
 
 ### Tools Exposed
 
-1. **`web_search(query, engines?, limit?)`** — Parallel search across multiple engines. Supported: `bing`, `duckduckgo`, `brave`, `baidu`, `juejin`, `github`, `github_code`, `tavily`. Engines run concurrently via `asyncio.gather`.
+1. **`web_search(query, engines?, limit?)`** — Parallel search across multiple engines. Supported: `duckduckgo`, `baidu`, `juejin`, `github`, `github_code`, `tavily`. Engines run concurrently via `asyncio.gather`.
 2. **`fetch_web_content(url, prompt?, max_chars?)`** — Fetches a URL, strips noise (scripts, navs, ads, sidebars), extracts main content (prefers `<article>`/`<main>`/`.content`), returns cleaned text.
 
 ### Configuration (Environment Variables)
 
 | Variable | Purpose |
 |---|---|
-| `DEFAULT_SEARCH_ENGINE` | Default engine (default: `bing`) |
+| `DEFAULT_SEARCH_ENGINE` | Default engine (default: `duckduckgo`) |
 | `ALLOWED_SEARCH_ENGINES` | Comma-separated allowlist; unset = all allowed |
-| `BRAVE_API_KEY` | Brave Search API key |
 | `TAVILY_API_KEY` | Tavily AI Search API key |
 | `GITHUB_TOKEN` | GitHub API token (for `github`/`github_code` engines) |
 | `USE_PROXY` | Enable proxy (`true`/`false`, default: `false`) |

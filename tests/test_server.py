@@ -13,7 +13,6 @@ from mcp_smart_searcher.server import (
     get_proxy_config,
     is_engine_allowed,
     search_baidu,
-    search_bing,
     search_duckduckgo,
     search_github,
     search_github_code,
@@ -30,15 +29,6 @@ from mcp_smart_searcher.server import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-HTML_BING = """
-<html>
-<body>
-<div class="b_algo"><h2><a href="https://example.com">Test Title</a></h2><div class="b_caption"><p>Test snippet</p></div></div>
-<div class="b_algo"><h2><a href="https://example2.com">Second</a></h2><div class="b_caption"><p>Second snippet</p></div></div>
-</body>
-</html>
-"""
 
 HTML_DUCKDUCKGO = """
 <html>
@@ -104,18 +94,18 @@ class TestGetProxyConfig:
 class TestIsEngineAllowed:
     def test_no_allowlist_allows_all(self):
         with patch("mcp_smart_searcher.server.ALLOWED_SEARCH_ENGINES", None):
-            assert is_engine_allowed("bing") is True
             assert is_engine_allowed("duckduckgo") is True
+            assert is_engine_allowed("baidu") is True
 
     def test_allowlist_filters(self):
-        with patch("mcp_smart_searcher.server.ALLOWED_SEARCH_ENGINES", ["bing", "brave"]):
-            assert is_engine_allowed("bing") is True
-            assert is_engine_allowed("brave") is True
-            assert is_engine_allowed("duckduckgo") is False
+        with patch("mcp_smart_searcher.server.ALLOWED_SEARCH_ENGINES", ["duckduckgo", "baidu"]):
+            assert is_engine_allowed("duckduckgo") is True
+            assert is_engine_allowed("baidu") is True
+            assert is_engine_allowed("github") is False
 
     def test_empty_allowlist_allows_all(self):
         with patch("mcp_smart_searcher.server.ALLOWED_SEARCH_ENGINES", [""]):
-            assert is_engine_allowed("bing") is True
+            assert is_engine_allowed("duckduckgo") is True
 
 
 # ---------------------------------------------------------------------------
@@ -191,30 +181,6 @@ class TestFetchUrl:
         result = await fetch_url(mock_client, "https://example.com", max_retries=2)
         assert "HTTP 404" in result
         assert mock_client.get.call_count == 1  # no retries on 4xx
-
-
-# ---------------------------------------------------------------------------
-# Tests: search_bing
-# ---------------------------------------------------------------------------
-
-class TestSearchBing:
-    @pytest.mark.asyncio
-    async def test_returns_results(self):
-        mock_client = make_mock_client(HTML_BING)
-        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
-            results = await search_bing("test query", 5)
-        assert len(results) == 2
-        assert results[0]["title"] == "Test Title"
-        assert results[0]["url"] == "https://example.com"
-        assert results[0]["snippet"] == "Test snippet"
-        assert results[0]["engine"] == "bing"
-
-    @pytest.mark.asyncio
-    async def test_empty_html(self):
-        mock_client = make_mock_client("<html></html>")
-        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
-            results = await search_bing("test", 5)
-        assert len(results) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -347,23 +313,23 @@ class TestWebSearch:
     @pytest.mark.asyncio
     async def test_limit_clamping(self):
         """Limit should be clamped between 1 and 50."""
-        mock_bing = AsyncMock(return_value=[])
-        with patch.dict("mcp_smart_searcher.server.SEARCH_ENGINES", {"bing": mock_bing}, clear=False):
+        mock_ddg = AsyncMock(return_value=[])
+        with patch.dict("mcp_smart_searcher.server.SEARCH_ENGINES", {"duckduckgo": mock_ddg}, clear=False):
             with patch("mcp_smart_searcher.server.ALLOWED_SEARCH_ENGINES", None):
-                result = await web_search("test", engines=["bing"], limit=0)
+                result = await web_search("test", engines=["duckduckgo"], limit=0)
                 assert isinstance(result, str)
 
     @pytest.mark.asyncio
     async def test_results_formatting(self):
         mock_results = [
-            {"title": "Result 1", "url": "https://example.com", "snippet": "Snippet 1", "engine": "bing"},
-            {"title": "Result 2", "url": "https://example2.com", "snippet": "Snippet 2", "engine": "bing"},
+            {"title": "Result 1", "url": "https://example.com", "snippet": "Snippet 1", "engine": "duckduckgo"},
+            {"title": "Result 2", "url": "https://example2.com", "snippet": "Snippet 2", "engine": "duckduckgo"},
         ]
-        mock_bing = AsyncMock(return_value=mock_results)
-        with patch.dict("mcp_smart_searcher.server.SEARCH_ENGINES", {"bing": mock_bing}, clear=False):
+        mock_ddg = AsyncMock(return_value=mock_results)
+        with patch.dict("mcp_smart_searcher.server.SEARCH_ENGINES", {"duckduckgo": mock_ddg}, clear=False):
             with patch("mcp_smart_searcher.server.ALLOWED_SEARCH_ENGINES", None):
-                result = await web_search("test", engines=["bing"])
-        assert "[bing] Result 1" in result
+                result = await web_search("test", engines=["duckduckgo"])
+        assert "[duckduckgo] Result 1" in result
         assert "https://example.com" in result
         assert "Snippet 1" in result
 

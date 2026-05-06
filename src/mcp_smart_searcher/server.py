@@ -26,7 +26,7 @@ logger = logging.getLogger("mcp_smart_searcher")
 mcp = FastMCP("smart-searcher")
 
 # Configuration from environment variables
-DEFAULT_SEARCH_ENGINE = os.getenv("DEFAULT_SEARCH_ENGINE", "bing")
+DEFAULT_SEARCH_ENGINE = os.getenv("DEFAULT_SEARCH_ENGINE", "duckduckgo")
 ALLOWED_SEARCH_ENGINES = os.getenv("ALLOWED_SEARCH_ENGINES", "").split(",") if os.getenv("ALLOWED_SEARCH_ENGINES") else None
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
@@ -44,7 +44,7 @@ _search_semaphore = asyncio.Semaphore(MAX_CONCURRENT_SEARCH)
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 # Supported search engines
-ALL_ENGINES = ["bing", "duckduckgo", "baidu", "juejin", "github", "github_code", "tavily"]
+ALL_ENGINES = ["duckduckgo", "baidu", "juejin", "github", "github_code", "tavily"]
 
 
 def get_proxy_config(engine: str = None) -> dict:
@@ -128,41 +128,6 @@ async def fetch_url(
             return f"Error fetching {url}: {type(e).__name__}: {str(e)}"
 
     return last_error or f"Error fetching {url}: unknown error"
-
-
-async def search_bing(query: str, limit: int) -> list[dict]:
-    """Search using Bing."""
-    async with _search_semaphore:
-        results = []
-        logger.info("Bing search: query=%r limit=%d", query, limit)
-        async with httpx.AsyncClient(**get_proxy_config("bing")) as client:
-            try:
-                url = f"https://www.bing.com/search?q={urllib.parse.quote(query)}&count={limit}"
-                headers = {"User-Agent": USER_AGENT}
-                html = await fetch_url(client, url, headers)
-                soup = BeautifulSoup(html, "lxml")
-
-                items = soup.select(".b_algo")[:limit]
-                if not items:
-                    items = soup.select("[class*='b_algo']")[:limit]
-                if not items:
-                    logger.warning("Bing returned no results for query=%r (CSS selectors matched nothing)", query)
-
-                for item in items:
-                    title_elem = item.select_one("h2 a")
-                    snippet_elem = item.select_one(".b_caption p")
-                    if title_elem:
-                        results.append({
-                            "title": title_elem.get_text(strip=True),
-                            "url": title_elem.get("href", ""),
-                            "snippet": snippet_elem.get_text(strip=True) if snippet_elem else "",
-                            "engine": "bing"
-                        })
-                logger.info("Bing returned %d results", len(results))
-            except Exception as e:
-                logger.error("Bing search failed: %s", str(e), exc_info=True)
-                results.append({"error": f"Bing search failed: {str(e)}", "engine": "bing"})
-        return results
 
 
 async def search_duckduckgo(query: str, limit: int) -> list[dict]:
@@ -384,7 +349,6 @@ async def search_tavily(query: str, limit: int) -> list[dict]:
 
 # Search engine mapping
 SEARCH_ENGINES = {
-    "bing": search_bing,
     "duckduckgo": search_duckduckgo,
     "baidu": search_baidu,
     "juejin": search_juejin,
@@ -401,7 +365,7 @@ async def web_search(query: str, engines: list[str] = None, limit: int = 10) -> 
 
     Args:
         query: Search query string (non-empty)
-        engines: Search engines to use (bing, duckduckgo, baidu, juejin, github, github_code, tavily)
+        engines: Search engines to use (duckduckgo, baidu, juejin, github, github_code, tavily)
         limit: Maximum number of results per engine (1-50, default 10)
 
     Returns:
