@@ -30,7 +30,7 @@ DEFAULT_SEARCH_ENGINE = os.getenv("DEFAULT_SEARCH_ENGINE", "duckduckgo")
 ALLOWED_SEARCH_ENGINES = os.getenv("ALLOWED_SEARCH_ENGINES", "").split(",") if os.getenv("ALLOWED_SEARCH_ENGINES") else None
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
-USE_PROXY = os.getenv("USE_PROXY", "false").lower() == "true"
+USE_PROXY = os.getenv("USE_PROXY", "true").lower() == "true"
 PROXY_URL = os.getenv("PROXY_URL", "http://127.0.0.1:7890")
 # Comma-separated list of engines that should use proxy. Empty means ALL engines use proxy (legacy behavior).
 PROXY_ENGINES = [e.strip() for e in os.getenv("PROXY_ENGINES", "").split(",") if e.strip()] if os.getenv("PROXY_ENGINES") else None
