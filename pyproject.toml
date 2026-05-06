@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [
-    { name = "Smart Searcher Team" }
+    { name = "PXSR" }
 ]
 keywords = ["mcp", "search", "web", "claude", "ai", "tavily"]
 classifiers = [
@@ -35,8 +35,8 @@ dev = [
 mcp-smart-searcher = "mcp_smart_searcher:main"
 
 [project.urls]
-Homepage = "https://github.com/lispking/ferris-search"
-Repository = "https://github.com/lispking/ferris-search"
+Homepage = "https://github.com/PXSR/mcp-smart-searcher"
+Repository = "https://github.com/PXSR/mcp-smart-searcher"
 
 [build-system]
 requires = ["hatchling"]
