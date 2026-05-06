@@ -77,17 +77,102 @@ python -m build
 
 ## Configuration
 
-| Environment Variable | Description | Default |
+All settings are configured via environment variables:
+
+| Variable | Description | Default |
 |---|---|---|
-| `DEFAULT_SEARCH_ENGINE` | Default search engine | `duckduckgo` |
-| `ALLOWED_SEARCH_ENGINES` | Comma-separated engine allowlist | (all allowed) |
+| `DEFAULT_SEARCH_ENGINE` | Default engine when none specified | `duckduckgo` |
+| `ALLOWED_SEARCH_ENGINES` | Comma-separated allowlist; unset = all allowed | (all) |
 | `TAVILY_API_KEY` | Tavily AI Search API key | (none) |
-| `GITHUB_TOKEN` | GitHub API token | (none) |
-| `USE_PROXY` | Enable proxy | `true` |
-| `PROXY_URL` | Proxy URL | `http://127.0.0.1:10809` |
-| `PROXY_ENGINES` | Comma-separated engines using proxy | (auto: domestic engines excluded) |
-| `MAX_CONCURRENT_SEARCH` | Max concurrent search requests | `5` |
-| `LOG_LEVEL` | Logging level | `INFO` |
+| `GITHUB_TOKEN` | GitHub API token (for github/github_code engines) | (none) |
+| `USE_PROXY` | Enable proxy for engines that need it | `true` |
+| `PROXY_URL` | Proxy address | `http://127.0.0.1:10809` |
+| `PROXY_ENGINES` | Override: comma-separated engines that use proxy | (auto) |
+| `MAX_CONCURRENT_SEARCH` | Max parallel search requests | `5` |
+| `LOG_LEVEL` | Logging level (`DEBUG`/`INFO`/`WARNING`/`ERROR`) | `INFO` |
+
+### Proxy behavior
+
+By default, domestic engines (`baidu`, `juejin`) skip proxy, while all others use proxy. You can override this with `PROXY_ENGINES`:
+
+```bash
+# Only use proxy for DuckDuckGo and GitHub
+PROXY_ENGINES=duckduckgo,github,github_code
+
+# Disable proxy entirely
+USE_PROXY=false
+```
+
+### MCP client configuration with env vars
+
+```json
+{
+  "mcpServers": {
+    "smart-searcher": {
+      "command": "mcp-smart-searcher",
+      "env": {
+        "TAVILY_API_KEY": "tvly-xxx",
+        "GITHUB_TOKEN": "ghp_xxx",
+        "PROXY_URL": "http://127.0.0.1:10809",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+Or with `npx`:
+
+```json
+{
+  "mcpServers": {
+    "smart-searcher": {
+      "command": "npx",
+      "args": ["-y", "mcp-smart-searcher"],
+      "env": {
+        "TAVILY_API_KEY": "tvly-xxx",
+        "GITHUB_TOKEN": "ghp_xxx"
+      }
+    }
+  }
+}
+```
+
+## Quick Start
+
+### 1. Install
+
+```bash
+pip install mcp-smart-searcher
+```
+
+### 2. Configure (optional)
+
+Create a `.env` file or set environment variables:
+
+```bash
+# .env
+TAVILY_API_KEY=tvly-your-key-here
+GITHUB_TOKEN=ghp_your-token-here
+PROXY_URL=http://127.0.0.1:10809
+LOG_LEVEL=INFO
+```
+
+### 3. Add to your MCP client
+
+```json
+{
+  "mcpServers": {
+    "smart-searcher": {
+      "command": "mcp-smart-searcher"
+    }
+  }
+}
+```
+
+### 4. Done!
+
+Your AI agent can now search the web and fetch web pages.
 
 ## License
 
