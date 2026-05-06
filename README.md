@@ -13,6 +13,10 @@ A smart MCP (Model Context Protocol) server for multi-engine web search with AI-
 ## Installation
 
 ```bash
+# For users
+pip install mcp-smart-searcher
+
+# For development
 pip install -e ".[dev]"
 ```
 
@@ -21,7 +25,14 @@ pip install -e ".[dev]"
 ### Run the server
 
 ```bash
+# Direct command (after pip install)
+mcp-smart-searcher
+
+# Or via Python module
 python -m mcp_smart_searcher
+
+# Or via npx (no install required)
+npx -y mcp-smart-searcher
 ```
 
 ### MCP client configuration
@@ -32,8 +43,20 @@ Add to your MCP client config (e.g., Claude Desktop):
 {
   "mcpServers": {
     "smart-searcher": {
-      "command": "python",
-      "args": ["-m", "mcp_smart_searcher"]
+      "command": "mcp-smart-searcher"
+    }
+  }
+}
+```
+
+Or with `npx`:
+
+```json
+{
+  "mcpServers": {
+    "smart-searcher": {
+      "command": "npx",
+      "args": ["-y", "mcp-smart-searcher"]
     }
   }
 }
