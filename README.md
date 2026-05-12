@@ -4,8 +4,13 @@ A smart MCP (Model Context Protocol) server for multi-engine web search with AI-
 
 ## Features
 
-- **Multi-engine search** — Search across 6 engines simultaneously: DuckDuckGo, Baidu, Juejin, GitHub, GitHub Code, Tavily
-- **Web content extraction** — Fetch and extract clean text from any public URL, with noise removal and prompt-guided filtering
+- **Multi-engine search** — Search across 8 engines simultaneously: DuckDuckGo, Baidu, Juejin, GitHub, GitHub Code, Tavily, Brave, Startpage
+- **Web content extraction** — Fetch and extract clean content from any public URL in multiple formats:
+  - `markdown` (default) — Structured Markdown with headings, lists, code blocks, tables, and links preserved
+  - `article` — Reader-mode extraction via Mozilla Readability, ideal for blogs/docs/news
+  - `text` — Plain text, legacy behavior
+  - `outline` — Page structure overview (headings, regions, interactive elements) without full content
+  - Plus noise removal, hidden-element stripping, and prompt-guided filtering
 - **Rate limiting** — Built-in concurrency control via semaphore
 - **Proxy support** — Per-engine proxy configuration
 - **Engine allowlist** — Restrict which engines can be used
@@ -81,7 +86,7 @@ All settings are configured via environment variables:
 
 | Variable | Description | Default |
 |---|---|---|
-| `DEFAULT_SEARCH_ENGINE` | Default engine when none specified | `duckduckgo` |
+| `DEFAULT_SEARCH_ENGINES` | Comma-separated default engines when none specified | `duckduckgo,baidu,startpage,tavily,brave` |
 | `ALLOWED_SEARCH_ENGINES` | Comma-separated allowlist; unset = all allowed | (all) |
 | `TAVILY_API_KEY` | Tavily AI Search API key | (none) |
 | `GITHUB_TOKEN` | GitHub API token (for github/github_code engines) | (none) |

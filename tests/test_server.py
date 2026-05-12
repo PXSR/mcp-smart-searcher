@@ -13,10 +13,12 @@ from mcp_smart_searcher.server import (
     get_proxy_config,
     is_engine_allowed,
     search_baidu,
+    search_brave,
     search_duckduckgo,
     search_github,
     search_github_code,
     search_juejin,
+    search_startpage,
     search_tavily,
     web_search,
     fetch_web_content,
@@ -42,6 +44,40 @@ HTML_BAIDU = """
 <html>
 <body>
 <div class="result"><h3><a href="https://example.com">Baidu Title</a></h3><div class="c-abstract">Baidu snippet</div></div>
+</body>
+</html>
+"""
+
+HTML_BRAVE = """
+<html>
+<body>
+<div data-type="web" class="snippet svelte-jmfu5f">
+    <a href="https://example.com/brave-result" class="heading">
+        <div class="title">Brave Search Result</div>
+    </a>
+    <div class="description snippet">Brave result snippet text here</div>
+</div>
+<div data-type="web" class="snippet svelte-jmfu5f">
+    <a href="https://example.com/brave-second" class="heading">
+        <div class="title">Brave Second Result</div>
+    </a>
+    <div class="description snippet">Second brave snippet</div>
+</div>
+</body>
+</html>
+"""
+
+HTML_STARTPAGE = """
+<html>
+<body>
+<div class="result css-o7i03b">
+    <a class="result-title" href="https://example.com/sp-result">Startpage Result Title</a>
+    <div class="description">Startpage result snippet text here</div>
+</div>
+<div class="result css-o7i03b">
+    <a class="result-title" href="https://example.com/sp-second">Startpage Second Result</a>
+    <div class="description">Second startpage snippet</div>
+</div>
 </body>
 </html>
 """
@@ -451,3 +487,237 @@ class TestEngineRegistry:
         """Every engine in SEARCH_ENGINES must be in ALL_ENGINES."""
         for engine in SEARCH_ENGINES:
             assert engine in ALL_ENGINES, f"Engine '{engine}' in SEARCH_ENGINES but not in ALL_ENGINES"
+
+
+# ---------------------------------------------------------------------------
+# Tests: fetch_web_content format modes
+# ---------------------------------------------------------------------------
+
+class TestFetchWebContentFormats:
+    @pytest.mark.asyncio
+    async def test_default_is_markdown(self):
+        """Default format should produce Markdown with ATX headings."""
+        html = "<html><body><article><h1>Title</h1><p>Content here</p></article></body></html>"
+        mock_client = make_mock_client(html)
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            result = await fetch_web_content("https://example.com")
+        assert "# Title" in result
+        assert "Content here" in result
+
+    @pytest.mark.asyncio
+    async def test_text_format_legacy_behavior(self):
+        """text format should behave like the old plain-text extraction."""
+        html = "<html><body><article><h1>Title</h1><p>Content here</p></article></body></html>"
+        mock_client = make_mock_client(html)
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            result = await fetch_web_content("https://example.com", format="text")
+        assert "Title" in result
+        assert "Content here" in result
+        assert "# Title" not in result  # No Markdown headings in text mode
+
+    @pytest.mark.asyncio
+    async def test_markdown_table_preserved(self):
+        """Markdown format should preserve tables as Markdown tables."""
+        html = """<html><body>
+        <table>
+            <tr><th>Name</th><th>Age</th></tr>
+            <tr><td>Alice</td><td>30</td></tr>
+        </table>
+        </body></html>"""
+        mock_client = make_mock_client(html)
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            result = await fetch_web_content("https://example.com", format="markdown")
+        assert "| Name |" in result
+        assert "| --- |" in result
+        assert "| Alice |" in result
+
+    @pytest.mark.asyncio
+    async def test_article_format_extracts_body(self):
+        """article format should use Readability to extract main content."""
+        html = """<html><body>
+        <nav>Navigation noise</nav>
+        <article><h1>Real Article</h1><p>This is the real content.</p></article>
+        <footer>Footer noise</footer>
+        </body></html>"""
+        mock_client = make_mock_client(html)
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            result = await fetch_web_content("https://example.com", format="article")
+        assert "Real Article" in result
+        assert "This is the real content." in result
+
+    @pytest.mark.asyncio
+    async def test_outline_format(self):
+        """outline format should return structural overview without full text."""
+        html = """<html><head><title>Test Page</title></head><body>
+        <main>
+            <h1>Main Title</h1>
+            <section>
+                <h2>Subsection</h2>
+                <p>Paragraph text that should NOT appear in outline.</p>
+                <a href=\"/a\">Link A</a>
+                <a href=\"/b\">Link B</a>
+            </section>
+        </main>
+        </body></html>"""
+        mock_client = make_mock_client(html)
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            result = await fetch_web_content("https://example.com", format="outline")
+        assert "Page Outline" in result
+        assert "Main Title" in result
+        assert "Subsection" in result
+        assert "Paragraph text that should NOT appear in outline." not in result
+        assert "2 link" in result
+
+    @pytest.mark.asyncio
+    async def test_invalid_format(self):
+        """Invalid format should return an error message."""
+        mock_client = make_mock_client("<html><body><p>Hi</p></body></html>")
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            result = await fetch_web_content("https://example.com", format="xml")
+        assert "Error" in result
+        assert "invalid format" in result
+
+    @pytest.mark.asyncio
+    async def test_prompt_filter_with_markdown(self):
+        """prompt filtering should work in markdown mode."""
+        html = """<html><body>
+        <p>Python is great for data science.</p>
+        <p>JavaScript runs in browsers.</p>
+        <p>Python has many ML libraries.</p>
+        </body></html>"""
+        mock_client = make_mock_client(html)
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            result = await fetch_web_content(
+                "https://example.com",
+                format="markdown",
+                prompt="python machine learning",
+                max_chars=120,
+            )
+        assert "Python" in result
+        assert "JavaScript" not in result
+        assert "Extraction prompt: python machine learning" in result
+
+    @pytest.mark.asyncio
+    async def test_noise_removal_in_markdown(self):
+        """Markdown mode should still remove nav, scripts, ads."""
+        html = """<html><body>
+        <nav>Navigation</nav>
+        <script>var x = 1;</script>
+        <div class=\"ad-banner\">Ad content</div>
+        <main><h1>Real</h1><p>Real content</p></main>
+        <footer>Footer</footer>
+        </body></html>"""
+        mock_client = make_mock_client(html)
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            result = await fetch_web_content("https://example.com", format="markdown")
+        assert "Real content" in result
+        assert "Navigation" not in result
+        assert "Ad content" not in result
+        assert "var x = 1" not in result
+
+    @pytest.mark.asyncio
+    async def test_hidden_elements_removed(self):
+        """Elements with display:none or aria-hidden should be stripped."""
+        html = """<html><body>
+        <p style=\"display:none\">Hidden by CSS</p>
+        <p aria-hidden=\"true\">Aria hidden</p>
+        <p>Visible content</p>
+        </body></html>"""
+        mock_client = make_mock_client(html)
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            result = await fetch_web_content("https://example.com", format="markdown")
+        assert "Visible content" in result
+        assert "Hidden by CSS" not in result
+        assert "Aria hidden" not in result
+
+
+# ---------------------------------------------------------------------------
+# Tests: search_brave
+# ---------------------------------------------------------------------------
+
+class TestSearchBrave:
+    @pytest.mark.asyncio
+    async def test_returns_results(self):
+        mock_client = make_mock_client(HTML_BRAVE)
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            results = await search_brave("test", 5)
+        assert len(results) == 2
+        assert results[0]["title"] == "Brave Search Result"
+        assert results[0]["url"] == "https://example.com/brave-result"
+        assert results[0]["snippet"] == "Brave result snippet text here"
+        assert results[0]["engine"] == "brave"
+
+    @pytest.mark.asyncio
+    async def test_respects_limit(self):
+        mock_client = make_mock_client(HTML_BRAVE)
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            results = await search_brave("test", 1)
+        assert len(results) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_results(self):
+        html = "<html><body><p>No results</p></body></html>"
+        mock_client = make_mock_client(html)
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            results = await search_brave("test", 5)
+        assert len(results) == 0
+
+    @pytest.mark.asyncio
+    async def test_error_handling(self):
+        """fetch_url returns error string on failure; engine should detect and return error dict."""
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_cls.return_value = mock_client
+            with patch("mcp_smart_searcher.server.fetch_url", return_value="Error fetching https://search.brave.com/search?q=test: TimeoutException"):
+                results = await search_brave("test", 5)
+        assert len(results) == 1
+        assert "error" in results[0]
+        assert results[0]["engine"] == "brave"
+
+
+# ---------------------------------------------------------------------------
+# Tests: search_startpage
+# ---------------------------------------------------------------------------
+
+class TestSearchStartpage:
+    @pytest.mark.asyncio
+    async def test_returns_results(self):
+        mock_client = make_mock_client(HTML_STARTPAGE)
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            results = await search_startpage("test", 5)
+        assert len(results) == 2
+        assert results[0]["title"] == "Startpage Result Title"
+        assert results[0]["url"] == "https://example.com/sp-result"
+        assert results[0]["snippet"] == "Startpage result snippet text here"
+        assert results[0]["engine"] == "startpage"
+
+    @pytest.mark.asyncio
+    async def test_respects_limit(self):
+        mock_client = make_mock_client(HTML_STARTPAGE)
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            results = await search_startpage("test", 1)
+        assert len(results) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_results(self):
+        html = "<html><body><p>No results</p></body></html>"
+        mock_client = make_mock_client(html)
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient", return_value=mock_client):
+            results = await search_startpage("test", 5)
+        assert len(results) == 0
+
+    @pytest.mark.asyncio
+    async def test_error_handling(self):
+        """fetch_url returns error string on failure; engine should detect and return error dict."""
+        with patch("mcp_smart_searcher.server.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_cls.return_value = mock_client
+            with patch("mcp_smart_searcher.server.fetch_url", return_value="Error fetching https://www.startpage.com/sp/search?query=test: TimeoutException"):
+                results = await search_startpage("test", 5)
+        assert len(results) == 1
+        assert "error" in results[0]
+        assert results[0]["engine"] == "startpage"

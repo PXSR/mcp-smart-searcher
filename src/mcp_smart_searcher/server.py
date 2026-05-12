@@ -14,6 +14,19 @@ import httpx
 from bs4 import BeautifulSoup
 from mcp.server.fastmcp import FastMCP
 
+# Optional dependencies for advanced content extraction
+try:
+    from markdownify import markdownify as _md_converter
+    HAS_MARKDOWNIFY = True
+except ImportError:
+    HAS_MARKDOWNIFY = False
+
+try:
+    from readability import Document as ReadabilityDocument
+    HAS_READABILITY = True
+except ImportError:
+    HAS_READABILITY = False
+
 # Configure logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
@@ -26,7 +39,11 @@ logger = logging.getLogger("mcp_smart_searcher")
 mcp = FastMCP("smart-searcher")
 
 # Configuration from environment variables
-DEFAULT_SEARCH_ENGINE = os.getenv("DEFAULT_SEARCH_ENGINE", "duckduckgo")
+DEFAULT_SEARCH_ENGINES = [
+    e.strip()
+    for e in os.getenv("DEFAULT_SEARCH_ENGINES", "duckduckgo,baidu,startpage,tavily,brave").split(",")
+    if e.strip()
+]
 ALLOWED_SEARCH_ENGINES = os.getenv("ALLOWED_SEARCH_ENGINES", "").split(",") if os.getenv("ALLOWED_SEARCH_ENGINES") else None
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
@@ -44,7 +61,7 @@ _search_semaphore = asyncio.Semaphore(MAX_CONCURRENT_SEARCH)
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 # Supported search engines
-ALL_ENGINES = ["duckduckgo", "baidu", "juejin", "github", "github_code", "tavily"]
+ALL_ENGINES = ["duckduckgo", "baidu", "juejin", "github", "github_code", "tavily", "brave", "startpage"]
 
 
 # Engines that should NOT use proxy by default (domestic engines)
@@ -356,6 +373,98 @@ async def search_tavily(query: str, limit: int) -> list[dict]:
         return results
 
 
+async def search_brave(query: str, limit: int) -> list[dict]:
+    """Search using Brave Search."""
+    async with _search_semaphore:
+        results = []
+        logger.info("Brave search: query=%r limit=%d", query, limit)
+        async with httpx.AsyncClient(**get_proxy_config("brave")) as client:
+            try:
+                url = f"https://search.brave.com/search?q={urllib.parse.quote(query)}"
+                headers = {
+                    "User-Agent": USER_AGENT,
+                    "Accept": "text/html,application/xhtml+xml",
+                    "Accept-Encoding": "gzip, deflate",
+                    "Accept-Language": "en-US,en;q=0.9",
+                }
+                html = await fetch_url(client, url, headers)
+                if html.startswith("Error"):
+                    logger.warning("Brave fetch failed for query=%r: %s", query, html)
+                    results.append({"error": html, "engine": "brave"})
+                    return results
+
+                soup = BeautifulSoup(html, "lxml")
+
+                cards = soup.select('[data-type="web"]')[:limit]
+                if not cards:
+                    logger.warning("Brave returned no results for query=%r (CSS selectors matched nothing)", query)
+
+                for card in cards:
+                    title_el = card.select_one(".title") or card.select_one(".heading-medium")
+                    url_el = card.select_one("a[href]")
+                    snippet_el = card.select_one("[class*='snippet']") or card.select_one(".description")
+                    if title_el:
+                        href = url_el.get("href", "") if url_el else ""
+                        if not href.startswith("http"):
+                            href = ""
+                        results.append({
+                            "title": title_el.get_text(strip=True),
+                            "url": href,
+                            "snippet": snippet_el.get_text(strip=True) if snippet_el else "",
+                            "engine": "brave",
+                        })
+                logger.info("Brave returned %d results", len(results))
+            except Exception as e:
+                logger.error("Brave search failed: %s", str(e), exc_info=True)
+                results.append({"error": f"Brave search failed: {str(e)}", "engine": "brave"})
+        return results
+
+
+async def search_startpage(query: str, limit: int) -> list[dict]:
+    """Search using Startpage (Google proxy)."""
+    async with _search_semaphore:
+        results = []
+        logger.info("Startpage search: query=%r limit=%d", query, limit)
+        async with httpx.AsyncClient(**get_proxy_config("startpage")) as client:
+            try:
+                url = f"https://www.startpage.com/sp/search?query={urllib.parse.quote(query)}"
+                headers = {
+                    "User-Agent": USER_AGENT,
+                    "Accept": "text/html,application/xhtml+xml",
+                    "Accept-Encoding": "gzip, deflate",
+                    "Accept-Language": "en-US,en;q=0.9",
+                }
+                html = await fetch_url(client, url, headers)
+                if html.startswith("Error"):
+                    logger.warning("Startpage fetch failed for query=%r: %s", query, html)
+                    results.append({"error": html, "engine": "startpage"})
+                    return results
+
+                soup = BeautifulSoup(html, "lxml")
+
+                cards = soup.select(".result")[:limit]
+                if not cards:
+                    logger.warning("Startpage returned no results for query=%r (CSS selectors matched nothing)", query)
+
+                for card in cards:
+                    title_el = card.select_one("a.result-title") or card.select_one("h3 a")
+                    url_el = card.select_one("a[href^='http']")
+                    snippet_el = card.select_one(".description") or card.select_one("[class*='description']")
+                    if title_el:
+                        href = url_el.get("href", "") if url_el else ""
+                        results.append({
+                            "title": title_el.get_text(strip=True),
+                            "url": href,
+                            "snippet": snippet_el.get_text(strip=True) if snippet_el else "",
+                            "engine": "startpage",
+                        })
+                logger.info("Startpage returned %d results", len(results))
+            except Exception as e:
+                logger.error("Startpage search failed: %s", str(e), exc_info=True)
+                results.append({"error": f"Startpage search failed: {str(e)}", "engine": "startpage"})
+        return results
+
+
 # Search engine mapping
 SEARCH_ENGINES = {
     "duckduckgo": search_duckduckgo,
@@ -364,6 +473,8 @@ SEARCH_ENGINES = {
     "github": search_github,
     "github_code": search_github_code,
     "tavily": search_tavily,
+    "brave": search_brave,
+    "startpage": search_startpage,
 }
 
 
@@ -372,9 +483,13 @@ async def web_search(query: str, engines: list[str] = None, limit: int = 10) -> 
     """
     Search the web using one or more search engines simultaneously.
 
+    Default engines: duckduckgo, baidu, startpage, tavily, brave.
+    Configure via DEFAULT_SEARCH_ENGINES env var (comma-separated).
+
     Args:
         query: Search query string (non-empty)
-        engines: Search engines to use (duckduckgo, baidu, juejin, github, github_code, tavily)
+        engines: Search engines to use (duckduckgo, baidu, juejin, github, github_code, tavily, brave, startpage).
+                 When omitted, uses all DEFAULT_SEARCH_ENGINES.
         limit: Maximum number of results per engine (1-50, default 10)
 
     Returns:
@@ -386,14 +501,14 @@ async def web_search(query: str, engines: list[str] = None, limit: int = 10) -> 
     query = query.strip()
 
     if engines is None:
-        engines = [DEFAULT_SEARCH_ENGINE]
+        engines = DEFAULT_SEARCH_ENGINES
 
     limit = min(max(limit, 1), 50)
 
     # Filter allowed engines
     engines = [e for e in engines if is_engine_allowed(e)]
     if not engines:
-        engines = [DEFAULT_SEARCH_ENGINE] if is_engine_allowed(DEFAULT_SEARCH_ENGINE) else []
+        engines = [e for e in DEFAULT_SEARCH_ENGINES if is_engine_allowed(e)]
 
     if not engines:
         return "No allowed search engines configured"
@@ -466,14 +581,166 @@ def _filter_content_by_prompt(text: str, prompt: str, max_chars: int) -> str:
     return "\n\n".join(selected)
 
 
+# ─── Content extraction helpers ───
+
+def _clean_html(soup: BeautifulSoup) -> BeautifulSoup:
+    """Remove noise from HTML before conversion.
+
+    Removes scripts, styles, navs, ads, hidden elements, and inline styles.
+    Returns a new cleaned BeautifulSoup object.
+    """
+    soup = BeautifulSoup(str(soup), "lxml")
+
+    # Remove noisy tags
+    for element in soup(
+        ["script", "style", "nav", "header", "footer", "aside", "iframe", "noscript", "svg"]
+    ):
+        element.decompose()
+
+    # Remove ad/sidebar containers by class/id patterns
+    for element in soup.find_all(class_=re.compile(r"(ad-|banner|sidebar|promo|sponsored)", re.I)):
+        element.decompose()
+
+    # Remove elements that are visually hidden (waste tokens with no value)
+    for element in soup.find_all():
+        style = element.get("style", "")
+        if "display:none" in style or "visibility:hidden" in style:
+            element.decompose()
+            continue
+        if element.get("aria-hidden") == "true":
+            element.decompose()
+            continue
+        # Strip inline style attributes — they add noise without semantic value
+        if element.get("style"):
+            del element.attrs["style"]
+
+    # Remove empty block-level containers that serve no structural purpose
+    EMPTY_TAGS = {"div", "span", "section", "article", "p", "li"}
+    for _ in range(3):  # Multiple passes for nested empties
+        removed = False
+        for element in soup.find_all():
+            if element.name in EMPTY_TAGS:
+                text = element.get_text(strip=True)
+                if not text and not element.find_all(["img", "iframe", "video", "audio"]):
+                    # Keep if it has meaningful attributes (id, class, role)
+                    if not any(element.get(a) for a in ("id", "class", "role")):
+                        element.decompose()
+                        removed = True
+        if not removed:
+            break
+
+    return soup
+
+
+def _html_to_markdown(html: str) -> str:
+    """Convert cleaned HTML to Markdown using markdownify."""
+    if not HAS_MARKDOWNIFY:
+        # Graceful fallback: extract plain text
+        soup = BeautifulSoup(html, "lxml")
+        return soup.get_text(separator="\n", strip=True)
+
+    md = _md_converter(
+        html,
+        heading_style="ATX",
+        bullets="-",
+        strip=["script", "style", "noscript"],
+    )
+    # Collapse excessive blank lines
+    md = re.sub(r"\n{3,}", "\n\n", md)
+    return md.strip()
+
+
+def _extract_article(html: str) -> str | None:
+    """Extract article body using Mozilla Readability. Returns HTML or None."""
+    if not HAS_READABILITY:
+        return None
+    try:
+        doc = ReadabilityDocument(html)
+        summary = doc.summary()
+        if not summary or len(summary) < 100:
+            return None
+        return summary
+    except Exception:
+        return None
+
+
+def _extract_outline(soup: BeautifulSoup) -> str:
+    """Generate a structural outline of the page.
+
+    Returns headings hierarchy, semantic regions, and interactive element counts.
+    Useful for AI agents to understand page layout before reading full content.
+    """
+    lines: list[str] = []
+    lines.append("Page Outline")
+    lines.append("=" * 40)
+
+    # Title
+    title_tag = soup.find("title")
+    if title_tag and title_tag.get_text(strip=True):
+        lines.append(f"Title: {title_tag.get_text(strip=True)}")
+        lines.append("")
+
+    # Headings hierarchy
+    headings = soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])
+    if headings:
+        lines.append("Headings:")
+        for h in headings:
+            level = int(h.name[1])
+            text = h.get_text(strip=True)
+            if text:
+                lines.append(f"{'  ' * (level - 1)}- {h.name.upper()}: {text}")
+        lines.append("")
+
+    # Semantic regions
+    regions = soup.find_all(["main", "article", "section", "nav", "aside", "form"])
+    if regions:
+        lines.append("Regions:")
+        for region in regions:
+            tag = region.name
+            rid = region.get("id", "")
+            rcls = " ".join(region.get("class", []))[:40]
+            desc = f"<{tag}>"
+            if rid:
+                desc += f" #{rid}"
+            if rcls:
+                desc += f" .{rcls}"
+            # Count interactive children
+            links = len(region.find_all("a", href=True))
+            inputs = len(region.find_all(["input", "textarea", "select"]))
+            buttons = len(region.find_all("button"))
+            inter = []
+            if links:
+                inter.append(f"{links} link")
+            if inputs:
+                inter.append(f"{inputs} input")
+            if buttons:
+                inter.append(f"{buttons} button")
+            if inter:
+                desc += f" | {', '.join(inter)}"
+            lines.append(f"  - {desc}")
+        lines.append("")
+
+    # Global interactive summary
+    total_links = len(soup.find_all("a", href=True))
+    total_inputs = len(soup.find_all(["input", "textarea", "select"]))
+    total_buttons = len(soup.find_all("button"))
+    total_images = len(soup.find_all("img"))
+    lines.append(
+        f"[Summary] {total_links} links, {total_inputs} inputs, {total_buttons} buttons, {total_images} images"
+    )
+
+    return "\n".join(lines)
+
+
 @mcp.tool()
 async def fetch_web_content(
     url: str,
     prompt: str = None,
     max_chars: int = 30000,
+    format: str = "markdown",
 ) -> str:
     """
-    Fetch and extract text content from any public URL.
+    Fetch and extract content from any public URL.
 
     Args:
         url: Public HTTP/HTTPS URL to fetch
@@ -483,9 +750,13 @@ async def fetch_web_content(
                 content (e.g., "extract code examples only",
                 "summarize the main argument").
         max_chars: Maximum characters to return (default 30000)
+        format: Output format — "markdown" (default, structured Markdown),
+                "article" (reader-mode extraction as Markdown, best for blogs/docs),
+                "text" (plain text, legacy behavior),
+                "outline" (page structure overview only, no full content).
 
     Returns:
-        Extracted text content from the webpage, optionally filtered by prompt
+        Extracted content from the webpage in the requested format.
     """
     # Input validation
     if not url or not url.strip():
@@ -494,7 +765,11 @@ async def fetch_web_content(
     if not re.match(r"^https?://", url, re.IGNORECASE):
         return f"Error: invalid URL format: {url} (must start with http:// or https://)"
 
-    logger.info("fetch_web_content: url=%r prompt=%r max_chars=%d", url, prompt, max_chars)
+    format = (format or "markdown").strip().lower()
+    if format not in ("markdown", "article", "text", "outline"):
+        return f"Error: invalid format: {format}. Must be one of: markdown, article, text, outline"
+
+    logger.info("fetch_web_content: url=%r format=%r prompt=%r max_chars=%d", url, format, prompt, max_chars)
 
     async with httpx.AsyncClient(**get_proxy_config()) as client:
         headers = {"User-Agent": USER_AGENT}
@@ -504,56 +779,79 @@ async def fetch_web_content(
             logger.warning("fetch_web_content failed for %s: %s", url, html)
             return html
 
-        soup = BeautifulSoup(html, "lxml")
+        # ── outline mode: structural overview only ──
+        if format == "outline":
+            soup = BeautifulSoup(html, "lxml")
+            soup = _clean_html(soup)
+            outline = _extract_outline(soup)
+            output = f"URL: {url}\n\n{outline}"
+            if len(output) > max_chars:
+                output = output[:max_chars] + "...\n[Content truncated]"
+            return output
 
-        # Remove noisy elements
-        for element in soup(
-            [
-                "script",
-                "style",
-                "nav",
-                "header",
-                "footer",
-                "aside",
-                "iframe",
-                "noscript",
-                "svg",
-            ]
-        ):
-            element.decompose()
+        # ── article mode: readability extraction ──
+        if format == "article":
+            if not HAS_READABILITY:
+                logger.warning("readability-lxml not installed; falling back to markdown mode for %s", url)
+                format = "markdown"
+            else:
+                article_html = _extract_article(html)
+                if article_html:
+                    soup = BeautifulSoup(article_html, "lxml")
+                    soup = _clean_html(soup)
+                    text = _html_to_markdown(str(soup))
+                else:
+                    logger.warning("Readability extraction failed for %s; falling back to markdown mode", url)
+                    format = "markdown"
 
-        # Remove common ad/sidebar containers by class/id patterns
-        for element in soup.find_all(
-            class_=re.compile(r"(ad-|banner|sidebar|promo|sponsored)", re.I)
-        ):
-            element.decompose()
+        # ── markdown mode: full page as markdown ──
+        if format == "markdown":
+            soup = BeautifulSoup(html, "lxml")
+            soup = _clean_html(soup)
+            text = _html_to_markdown(str(soup))
 
-        # Try to extract main article content
-        article = (
-            soup.select_one("article")
-            or soup.select_one("main")
-            or soup.select_one("#content")
-            or soup.select_one(".content")
-        )
-        if article:
-            for element in article(["script", "style"]):
+        # ── text mode: legacy plain text ──
+        if format == "text":
+            soup = BeautifulSoup(html, "lxml")
+
+            # Remove noisy elements (legacy behavior)
+            for element in soup(
+                ["script", "style", "nav", "header", "footer", "aside", "iframe", "noscript", "svg"]
+            ):
                 element.decompose()
-            text = article.get_text(separator="\n", strip=True)
-        else:
-            text = soup.get_text(separator="\n", strip=True)
+            for element in soup.find_all(class_=re.compile(r"(ad-|banner|sidebar|promo|sponsored)", re.I)):
+                element.decompose()
 
-        # Clean up whitespace
-        lines = (line.strip() for line in text.splitlines())
-        text = "\n".join(line for line in lines if line)
+            article = (
+                soup.select_one("article")
+                or soup.select_one("main")
+                or soup.select_one("#content")
+                or soup.select_one(".content")
+            )
+            if article:
+                for element in article(["script", "style"]):
+                    element.decompose()
+                text = article.get_text(separator="\n", strip=True)
+            else:
+                text = soup.get_text(separator="\n", strip=True)
 
-        # Apply prompt-based filtering
+            lines = (line.strip() for line in text.splitlines())
+            text = "\n".join(line for line in lines if line)
+
+        # Build output with header budget awareness so content filtering
+        # and truncation respect the actual space available for body text.
         if prompt and prompt.strip():
             prompt = prompt.strip()
+            header = f"URL: {url}\nExtraction prompt: {prompt}\n\n"
+            available = max(0, max_chars - len(header))
             logger.debug("Applying prompt filter: %r", prompt)
-            text = _filter_content_by_prompt(text, prompt, max_chars)
-            output = f"URL: {url}\nExtraction prompt: {prompt}\n\n{text}"
+            text = _filter_content_by_prompt(text, prompt, available)
+            output = header + text
         else:
-            output = f"URL: {url}\n\n{text}"
+            header = f"URL: {url}\n\n"
+            available = max(0, max_chars - len(header))
+            text = text[:available]
+            output = header + text
 
         if len(output) > max_chars:
             output = output[:max_chars] + "...\n[Content truncated]"
